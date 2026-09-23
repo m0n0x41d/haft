@@ -204,7 +204,7 @@ func RequestSchema() map[string]any {
 	p := s["properties"].(map[string]any)
 	p["format"].(map[string]any)["enum"] = []string{app.Format}
 	p["operation"].(map[string]any)["enum"] = []string{"remember", "recall", "context", "impact", "fpf", "source", "check", "change", "recover"}
-	p["action"].(map[string]any)["description"] = "fpf/source: status, search, inspect; check: structural, prepare, observe; change: create, list, show, preview, apply, sync, archive, reopen, rebase, update; remember: terms or omitted."
+	p["action"].(map[string]any)["description"] = "recall: legacy or omitted; fpf/source: status, search, inspect; check: structural, prepare, observe; change: create, list, show, preview, apply, sync, archive, reopen, rebase, update; remember: terms or omitted."
 	p["carrier"].(map[string]any)["description"] = "Authored Markdown with YAML frontmatter. Explicit input fields are local trusted data; the adapter does not infer operator confirmation."
 	p["ref"].(map[string]any)["description"] = "Exact record/claim reference, source locator, or file:/dir:/sym: selector for the chosen operation."
 	p["request_id"].(map[string]any)["description"] = "Stable caller-generated idempotency key for a write; reuse only with identical payload."

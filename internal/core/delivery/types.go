@@ -14,7 +14,7 @@ import (
 
 const Format = "haft.api/2"
 const Budget = 8192
-const Guide = "Use haft.api/2. Default replies are summaries. Inspect delivery.complete, omissions and available; follow the supplied next_request or a part's request verbatim to read only needed detail. Parts and member directories are paged. view=bytes restores exact bytes with digest/offset; it is for bulk clients, not routine model context. Read a complete claim (including extensions) before replacing it, and the full governing source body before assessing applicability. Stale means repeat the original query; expired means the disposable result was lost. A transient result is not saved evidence. Delivery completeness does not establish truth, attribution or current basis."
+const Guide = "Use haft.api/2. Default replies are summaries. Inspect delivery.complete, omissions and available; follow the supplied next_request or a part's request verbatim to read only needed detail. Parts and member directories are paged. Saved retained attachments expose verified decoded content parts. view=bytes restores exact bytes with digest/offset; it is for bulk clients, not routine model context. Read a complete claim (including extensions) before replacing it, and the full governing source body before assessing applicability. Stale means repeat the original query; expired means the disposable result was lost. A transient result is not saved evidence. Delivery completeness does not establish truth, attribution or current basis."
 
 // Request is the executable read subset of the shared application request.
 type Request struct {

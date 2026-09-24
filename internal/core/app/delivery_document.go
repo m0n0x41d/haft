@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/m0n0x41d/haft/internal/core/carrier"
 	"github.com/m0n0x41d/haft/internal/core/delivery"
@@ -230,13 +231,16 @@ func yamlDelivery(q Request, r Result, cause error) delivery.Document {
 // interpreted as a verdict, and no body bytes or authority are rewritten.
 func addReports(d *delivery.Document, body []byte) {
 	type report struct {
-		Label  string `json:"label"`
-		Part   string `json:"part"`
-		Start  int    `json:"start_byte"`
-		End    int    `json:"end_byte"`
-		Digest string `json:"digest"`
+		Label        string `json:"label"`
+		Part         string `json:"part"`
+		Start        int    `json:"start_byte"`
+		End          int    `json:"end_byte"`
+		Digest       string `json:"digest"`
+		ContentPart  string `json:"content_part,omitempty"`
+		ContentError string `json:"content_error,omitempty"`
 	}
 	reports := []report{}
+	directoryAt := len(d.Parts)
 	offset := 0
 	label := ""
 	start := -1
@@ -259,7 +263,29 @@ func addReports(d *delivery.Document, body []byte) {
 			}
 			p.Label = label
 			d.Parts = append(d.Parts, p)
-			reports = append(reports, report{label, name, start, offset, carrier.Digest(raw)})
+			entry := report{Label: label, Part: name, Start: start, End: offset, Digest: carrier.Digest(raw)}
+			// Only our explicit retained-data format has a decoded projection.
+			// Its digest proves byte identity, never the truth of its contents.
+			var attachment struct {
+				Format string `json:"format"`
+				Digest string `json:"digest"`
+				Media  string `json:"media"`
+				Raw    []byte `json:"bytes_base64"`
+			}
+			if kind == "json" && json.Unmarshal(raw, &attachment) == nil && attachment.Format == "haft.retained-part/1" {
+				switch {
+				case carrier.Digest(attachment.Raw) != attachment.Digest:
+					entry.ContentError = "retained_digest_mismatch"
+				case attachment.Media == "json" && !json.Valid(attachment.Raw), attachment.Media == "text" && !utf8.Valid(attachment.Raw):
+					entry.ContentError = "retained_encoding_invalid"
+				case attachment.Media != "json" && attachment.Media != "text" && attachment.Media != "binary":
+					entry.ContentError = "retained_media_unknown"
+				default:
+					entry.ContentPart = name + "_content"
+					d.Parts = append(d.Parts, delivery.Part{Name: entry.ContentPart, Label: label + " (verified decoded data)", Media: attachment.Media, Raw: attachment.Raw})
+				}
+			}
+			reports = append(reports, entry)
 			start = -1
 		}
 		offset += len(line)
@@ -267,7 +293,6 @@ func addReports(d *delivery.Document, body []byte) {
 	if len(reports) > 0 {
 		catalog := delivery.JSON("reports", reports, false)
 		// Make the directory available before the potentially numerous report parts.
-		at := len(d.Parts) - len(reports)
-		d.Parts = append(d.Parts[:at], append([]delivery.Part{catalog}, d.Parts[at:]...)...)
+		d.Parts = append(d.Parts[:directoryAt], append([]delivery.Part{catalog}, d.Parts[directoryAt:]...)...)
 	}
 }

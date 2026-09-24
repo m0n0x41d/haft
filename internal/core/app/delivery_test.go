@@ -177,8 +177,9 @@ func TestTransientPrepareContextObserveRetention(t *testing.T) {
 	}
 	before := runnerRegressionPrepare(t, s, q)
 	input := runnerRegressionRun(t, s, before, 0)
-	// Supply a real foreign pass and verify the application refusal remains
-	// distinct from the independently classified runner observation.
+	// Transform this real local run into synthetic foreign metadata to exercise
+	// presentation. TestObserveCannotAttributeOtherPackageWithSameTestName runs
+	// the actual foreign package separately.
 	input.Expected.Selector.Package += "/other"
 	input.Observed.Selector = input.Expected.Selector
 	input.Observed.Command[len(input.Observed.Command)-1] = input.Expected.Selector.Package
@@ -218,8 +219,10 @@ func TestTransientPrepareContextObserveRetention(t *testing.T) {
 	}
 	v := readView(t, s)
 	found := false
+	savedID := ""
 	for _, doc := range v.Documents {
 		if doc.Record.Title == "Retained exact observation" {
+			savedID = doc.Record.ID
 			d := makeDelivery(Request{Operation: "recall", Ref: doc.Record.ID}, recall(Request{Ref: doc.Record.ID}, Result{Basis: map[string]string{}, Diagnostics: []carrier.Diagnostic{}}, v))
 			p, err := d.Member("report_1")
 			if err != nil {
@@ -241,8 +244,85 @@ func TestTransientPrepareContextObserveRetention(t *testing.T) {
 	if expired := public(t, s, nextApp(observedQ)); expired.Kind != "expired" {
 		t.Fatal("missing transient became history", expired.Kind)
 	}
+	// A saved JSON attachment remains field-readable after all transient data
+	// disappears. The client follows returned member requests, not base64 blobs.
+	restarted := Service{Root: s.Root}
+	retained := public(t, restarted, Request{Operation: "recall", Ref: savedID})
+	contentQ := deliveredPart(t, restarted, retained, "report_1_content")
+	if !bytes.Equal(collectPart(t, restarted, contentQ), exact) {
+		t.Fatal("decoded retained bytes changed")
+	}
+	qMember := contentQ
+	selected := false
+	for n := 0; n < 30; n++ {
+		page := public(t, restarted, nextApp(qMember))
+		var members struct {
+			Members []struct {
+				Key  string              `json:"key"`
+				Read delivery.Descriptor `json:"read"`
+			} `json:"members"`
+		}
+		if err := json.Unmarshal(rawJSON(page.Data), &members); err != nil {
+			t.Fatal(err)
+		}
+		for _, member := range members.Members {
+			if member.Key == "result_kind" {
+				field := public(t, restarted, nextApp(member.Read.Request))
+				if object(field.Data)["text"] != "unattributable" || !field.Delivery.Complete {
+					t.Fatal("retained field unavailable", field)
+				}
+				selected = true
+			}
+		}
+		if selected || page.Delivery.Next == nil {
+			break
+		}
+		qMember = *page.Delivery.Next
+	}
+	if !selected {
+		t.Fatal("no selective retained JSON read")
+	}
 	if replay := public(t, s, remember); replay.Kind != "replayed" {
 		t.Fatal("committed retention replay needed cache", replay)
+	}
+}
+
+func TestRetainedAttachmentViewsRejectCorruption(t *testing.T) {
+	for _, tc := range []struct {
+		name, media, digest, wantError string
+		raw                            []byte
+	}{
+		{"json", "json", "", "", []byte(`{"unknown-extension":{"number":900719925474099312345}}`)},
+		{"text", "text", "", "", []byte("Кириллица < & \n")},
+		{"binary", "binary", "", "", []byte{0, 255, 1}},
+		{"corrupt", "json", "sha256:incorrect", "retained_digest_mismatch", []byte(`{}`)},
+		{"invalid-json", "json", "", "retained_encoding_invalid", []byte("broken")},
+		{"invalid-utf8", "text", "", "retained_encoding_invalid", []byte{255}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			digest := tc.digest
+			if digest == "" {
+				digest = carrier.Digest(tc.raw)
+			}
+			raw := rawJSON(map[string]any{"format": "haft.retained-part/1", "media": tc.media, "digest": digest, "bytes_base64": tc.raw})
+			var d delivery.Document
+			addReports(&d, []byte("Retained data:\n```json\n"+string(raw)+"\n```\n"))
+			catalog, _ := d.Member("reports")
+			var entries []map[string]any
+			json.Unmarshal(catalog.Raw, &entries)
+			p, err := d.Member("report_1_content")
+			if tc.wantError != "" {
+				if err == nil || entries[0]["content_error"] != tc.wantError {
+					t.Fatal("invalid bytes advertised as verified", entries)
+				}
+			} else if err != nil || !bytes.Equal(p.Raw, tc.raw) || p.Media != tc.media {
+				t.Fatal("retained projection lost bytes", err)
+			}
+			envelope, _ := d.Member("report_1")
+			if !bytes.Equal(bytes.TrimSpace(envelope.Raw), raw) {
+				t.Fatal("envelope rewritten")
+			}
+		})
 	}
 }
 func TestTransientSourceStaleAndCorrupt(t *testing.T) {

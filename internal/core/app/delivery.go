@@ -77,12 +77,13 @@ func (s Service) Call(ctx context.Context, q Request) delivery.Response {
 				return delivery.Error("invalid_retention", err.Error())
 			}
 			attachment, _ := json.Marshal(struct {
+				Format string `json:"format"`
 				Ref    string `json:"result_ref"`
 				Part   string `json:"part"`
 				Digest string `json:"digest"`
 				Media  string `json:"media"`
 				Raw    []byte `json:"bytes_base64"`
-			}{keep.Ref, keep.Part, carrier.Digest(p.Raw), p.Media, p.Raw})
+			}{"haft.retained-part/1", keep.Ref, keep.Part, carrier.Digest(p.Raw), p.Media, p.Raw})
 			q.Carrier += "\n\nRetained captured result (data, not independent attestation):\n```json\n" + string(attachment) + "\n```\n"
 		}
 		q.Retain = nil

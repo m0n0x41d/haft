@@ -69,69 +69,98 @@ type Edge struct {
 func (v View) Edges() []Edge {
 	var out []Edge
 	for i, e := range v.Projection.Entries {
-		if e.State == carrier.Invalid {
-			continue
+		out = append(out, v.documentEdges(e, v.DocumentPaths[i])...)
+	}
+	return out
+}
+
+func (v View) documentEdges(e carrier.Entry, documentPath string) []Edge {
+	var out []Edge
+	if e.State == carrier.Invalid {
+		return nil
+	}
+	r := e.Document.Record
+	add := func(from, to, kind, scope string) {
+		unresolved := false
+		if ref, err := carrier.ParseRef(to); err == nil {
+			res := v.Resolve(ref.String())
+			unresolved = res.Kind != "found"
 		}
-		r := e.Document.Record
-		add := func(from, to, kind, scope string) {
-			unresolved := false
-			if ref, err := carrier.ParseRef(to); err == nil {
-				res := v.Resolve(ref.String())
-				unresolved = res.Kind != "found"
+		out = append(out, Edge{From: from, To: to, Kind: kind, Scope: scope, State: e.State, Path: documentPath, Unresolved: unresolved})
+	}
+	add(e.Ref, r.About, "about", "")
+	for _, target := range r.Constrains {
+		add(e.Ref, target, "constraint", "")
+	}
+	for _, link := range r.Links {
+		kind := "navigation"
+		if link.Kind == "relies_on" {
+			kind = "premise"
+		}
+		add(e.Ref, link.Target, kind, link.Reason)
+	}
+	for _, ref := range r.Supersedes {
+		add(e.Ref, ref, "succession", r.SupersedeReason)
+	}
+	for _, term := range r.Terms {
+		add(e.Ref, term, "term", "")
+	}
+	for _, source := range r.Sources {
+		add(e.Ref, source.Ref, "source", source.BodyDigest)
+	}
+	for _, c := range r.Claims {
+		from := e.Ref + "#" + c.ID
+		for _, b := range c.ImplementedBy {
+			add(from, b.Ref, "implementation", b.Covers)
+		}
+		for _, b := range c.Checks {
+			add(from, b.Ref, "check", b.Covers)
+		}
+		for _, ref := range c.Refs {
+			if !strings.ContainsAny(ref, "#:@") {
+				ref = e.Ref + "#" + ref
 			}
-			out = append(out, Edge{From: from, To: to, Kind: kind, Scope: scope, State: e.State, Path: v.DocumentPaths[i], Unresolved: unresolved})
+			add(from, ref, "claim_dependency", "")
 		}
-		add(e.Ref, r.About, "about", "")
-		for _, target := range r.Constrains {
-			add(e.Ref, target, "constraint", "")
+		for _, term := range c.Terms {
+			add(from, term, "term", "")
 		}
-		for _, link := range r.Links {
-			kind := "navigation"
-			if link.Kind == "relies_on" {
-				kind = "premise"
-			}
-			add(e.Ref, link.Target, kind, link.Reason)
+		for _, input := range c.EvidenceInputs {
+			add(from, input.Ref, "evidence_input", input.Applicability)
 		}
-		for _, ref := range r.Supersedes {
-			add(e.Ref, ref, "succession", r.SupersedeReason)
-		}
-		for _, term := range r.Terms {
-			add(e.Ref, term, "term", "")
-		}
-		for _, source := range r.Sources {
-			add(e.Ref, source.Ref, "source", source.BodyDigest)
-		}
-		for _, c := range r.Claims {
-			from := e.Ref + "#" + c.ID
-			for _, b := range c.ImplementedBy {
-				add(from, b.Ref, "implementation", b.Covers)
-			}
-			for _, b := range c.Checks {
-				add(from, b.Ref, "check", b.Covers)
-			}
-			for _, ref := range c.Refs {
-				if !strings.ContainsAny(ref, "#:@") {
-					ref = e.Ref + "#" + ref
-				}
-				add(from, ref, "claim_dependency", "")
-			}
-			for _, term := range c.Terms {
-				add(from, term, "term", "")
-			}
-			for _, input := range c.EvidenceInputs {
-				add(from, input.Ref, "evidence_input", input.Applicability)
-			}
-		}
-		for _, u := range r.Uses {
-			add(e.Ref+"#"+u.ID, u.Target, "evidence", u.Scope)
-		}
+	}
+	for _, u := range r.Uses {
+		add(e.Ref+"#"+u.ID, u.Target, "evidence", u.Scope)
 	}
 	return out
 }
 func (v View) Links(from string) []Edge {
+	resolved := v.Resolve(from)
+	if resolved.Kind != "found" || resolved.Document == nil {
+		return nil
+	}
+	ref, err := carrier.ParseRef(from)
+	if err != nil {
+		return nil
+	}
+	documentRef := resolved.Document.Record.ID + "@" + resolved.Document.Edition
+	endpoint := documentRef
+	if ref.ClaimID != "" {
+		endpoint += "#" + ref.ClaimID
+	}
+	// A durable historical edition can outlive its canonical carrier. Derive
+	// its outgoing relations from those exact bytes, never the current head.
+	entry := carrier.Entry{Document: *resolved.Document, Ref: documentRef, State: carrier.Historical}
+	documentPath := "editions/sha256/" + strings.TrimPrefix(resolved.Document.Edition, "sha256:") + ".json"
+	for i, e := range v.Projection.Entries {
+		if e.Ref == documentRef {
+			entry, documentPath = e, v.DocumentPaths[i]
+			break
+		}
+	}
 	var out []Edge
-	for _, e := range v.Edges() {
-		if e.From == from {
+	for _, e := range v.documentEdges(entry, documentPath) {
+		if e.From == endpoint {
 			out = append(out, e)
 		}
 	}
@@ -139,12 +168,33 @@ func (v View) Links(from string) []Edge {
 }
 func (v View) Backlinks(to string) []Edge {
 	var out []Edge
+	endpoint, resolved := v.exactEndpoint(to)
 	for _, e := range v.Edges() {
 		if e.To == to {
 			out = append(out, e)
+		} else if resolved {
+			// Live aliases/IDs may identify this edition in the current view.
+			// Pinned targets resolve only to their own durable edition. Keep
+			// the authored target in the returned edge instead of rewriting it.
+			if target, found := v.exactEndpoint(e.To); found && target == endpoint {
+				out = append(out, e)
+			}
 		}
 	}
 	return out
+}
+
+func (v View) exactEndpoint(address string) (string, bool) {
+	ref, err := carrier.ParseRef(address)
+	if err != nil {
+		return "", false
+	}
+	resolved := v.Resolve(address)
+	if resolved.Kind != "found" || resolved.Document == nil {
+		return "", false
+	}
+	ref.RecordID, ref.Alias, ref.Digest = resolved.Document.Record.ID, "", resolved.Document.Edition
+	return ref.String(), true
 }
 
 // Resolve distinguishes durable pinned history from an unpersisted live

@@ -124,6 +124,16 @@ also valid YAML. For a clarification, copy the complete claim object from
 recall's data.resolution.document.record.claims, change only intended fields,
 and use this frontmatter shape (replace angle-bracket placeholders):
 
+Claim extensions and extensions on checks, implemented_by, examples and
+evidence_inputs appear inline in JSON, exactly as in YAML: for example
+{"id":"rule","kind":"definition","text":"Bounded meaning","x-bound":5}.
+Keep those unknown fields in their original objects; edit x-bound directly.
+Do not introduce an extra wrapper. A literal field named extra is ordinary
+authored data. Re-recall claims saved from an older API's extra envelope before
+authoring a change; do not guess whether an existing extra field is a wrapper.
+This inline rule applies to claims and these nested objects, not other record
+or source-snapshot JSON envelopes. Existing carrier/snapshot bytes are unchanged.
+
 {"format":"haft.change/1","title":"<readable title>","intent":"<intended effect>","patches":[{"base":"<data.exact_ref of the spec, without #claim>","operations":[{"op":"MODIFIED","claim_id":"<existing claim ID>","claim":<complete revised claim object>,"reason":"<why this change>"}]}]}
 
 Omit id, change_key, state and created_at on initial creation to use API defaults.

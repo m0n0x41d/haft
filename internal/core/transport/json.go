@@ -11,15 +11,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/m0n0x41d/haft/internal/core/app"
+	"github.com/m0n0x41d/haft/internal/core/carrier"
 )
 
 const MaxInputBytes = 16 << 20
 const maxDepth = 64
 const maxValues = 200000
 
-// DecodeRequest rejects duplicate keys, unknown fields (including nested fields),
+// DecodeRequest rejects duplicate keys and unknown control fields (also nested),
 // case-folded aliases, invalid UTF-8, trailing data and excessive resource use.
-// Map keys such as snapshot digests remain data rather than struct field names.
+// Map keys and the carrier's inline claim extensions remain authored data.
 func DecodeRequest(raw []byte) (app.Request, error) {
 	var q app.Request
 	err := Decode(raw, &q)
@@ -142,6 +143,19 @@ func fieldTypes(t reflect.Type) map[string]reflect.Type {
 	}
 	return m
 }
+
+// These are the four carrier authoring objects with an inline JSON namespace.
+// Request/revision/patch/operation controls and source snapshot envelopes stay
+// closed; custom marshaling alone is not permission to accept unknown controls.
+func inlineClaimExtensions(t reflect.Type) bool {
+	switch t {
+	case reflect.TypeOf(carrier.Claim{}), reflect.TypeOf(carrier.Binding{}),
+		reflect.TypeOf(carrier.Example{}), reflect.TypeOf(carrier.EvidenceInput{}):
+		return true
+	}
+	return false
+}
+
 func validateFields(v any, t reflect.Type, path string) error {
 	if t == reflect.TypeOf(json.RawMessage{}) {
 		return nil
@@ -168,6 +182,14 @@ func validateFields(v any, t reflect.Type, path string) error {
 		for key, value := range m {
 			ft, ok := fields[key]
 			if !ok {
+				if inlineClaimExtensions(t) {
+					for known := range fields {
+						if strings.EqualFold(known, key) {
+							return fmt.Errorf("unknown_field: %s.%s", path, key)
+						}
+					}
+					continue // resource and duplicate checks already covered data
+				}
 				return fmt.Errorf("unknown_field: %s.%s", path, key)
 			}
 			if err := validateFields(value, ft, path+"."+key); err != nil {
@@ -227,7 +249,7 @@ func schema(t reflect.Type) map[string]any {
 		}
 		s["type"] = "object"
 		s["properties"] = p
-		s["additionalProperties"] = false
+		s["additionalProperties"] = inlineClaimExtensions(t)
 	case reflect.Map:
 		s["type"] = "object"
 		s["additionalProperties"] = schema(t.Elem())

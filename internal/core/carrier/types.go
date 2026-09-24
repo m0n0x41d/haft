@@ -105,14 +105,14 @@ type Claim struct {
 	Unchecked      string          `yaml:"unchecked,omitempty" json:"unchecked,omitempty"`
 	Examples       []Example       `yaml:"examples,omitempty" json:"examples,omitempty"`
 	EvidenceInputs []EvidenceInput `yaml:"evidence_inputs,omitempty" json:"evidence_inputs,omitempty"`
-	Extra          Extra           `yaml:",inline" json:"extra,omitempty"`
+	Extra          Extra           `yaml:",inline" json:"-"`
 }
 type Binding struct {
 	Ref                 string `yaml:"ref" json:"ref"`
 	Covers              string `yaml:"covers" json:"covers"`
 	Conditions          string `yaml:"conditions,omitempty" json:"conditions,omitempty"`
 	InterpretationBasis any    `yaml:"interpretation_basis,omitempty" json:"interpretation_basis,omitempty"`
-	Extra               Extra  `yaml:",inline" json:"extra,omitempty"`
+	Extra               Extra  `yaml:",inline" json:"-"`
 }
 type Example struct {
 	ID    string `yaml:"id" json:"id"`
@@ -120,12 +120,12 @@ type Example struct {
 	When  string `yaml:"when,omitempty" json:"when,omitempty"`
 	Then  string `yaml:"then,omitempty" json:"then,omitempty"`
 	Text  string `yaml:"text,omitempty" json:"text,omitempty"`
-	Extra Extra  `yaml:",inline" json:"extra,omitempty"`
+	Extra Extra  `yaml:",inline" json:"-"`
 }
 type EvidenceInput struct {
 	Ref           string `yaml:"ref" json:"ref"`
 	Applicability string `yaml:"applicability" json:"applicability"`
-	Extra         Extra  `yaml:",inline" json:"extra,omitempty"`
+	Extra         Extra  `yaml:",inline" json:"-"`
 }
 type Retirement struct {
 	Reason string `yaml:"reason" json:"reason"`

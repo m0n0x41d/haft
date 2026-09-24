@@ -8,6 +8,7 @@ import (
 )
 
 type SearchHit struct {
+	Ref      string `json:"ref,omitempty"`
 	Path     string `json:"path"`
 	RecordID string `json:"record_id,omitempty"`
 	Title    string `json:"title,omitempty"`
@@ -49,7 +50,7 @@ func (v View) Search(query string, limit int) SearchResult {
 			break
 		}
 		e := metadata[p]
-		out.Hits = append(out.Hits, SearchHit{Path: p, RecordID: e.Document.Record.ID, Title: e.Document.Record.Title, State: e.State, Text: string(raw)})
+		out.Hits = append(out.Hits, SearchHit{Ref: e.Ref, Path: p, RecordID: e.Document.Record.ID, Title: e.Document.Record.Title, State: e.State, Text: string(raw)})
 	}
 	return out
 }

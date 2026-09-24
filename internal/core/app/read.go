@@ -29,7 +29,11 @@ func recall(q Request, r Result, v store.View) Result {
 	}
 	if q.Ref == "" {
 		r.Kind = "results"
-		r.Data = v.Search(q.Query, q.Limit)
+		limit := q.Limit
+		if q.forDelivery {
+			limit = len(v.Files) + 1
+		}
+		r.Data = v.Search(q.Query, limit)
 		return r
 	}
 	found := v.Resolve(q.Ref)

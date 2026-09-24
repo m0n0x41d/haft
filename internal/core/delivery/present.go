@@ -74,7 +74,7 @@ func keys(m map[string]any) []string {
 	return ks
 }
 func readRequest(d Document, p Part, view string) Request {
-	q := Request{Format: Format, Operation: "read", Ref: d.Ref, View: view, Part: p.Name, ExpectedDigest: carrier.Digest(p.Raw)}
+	q := Request{Format: Format, Operation: "read", Ref: d.Ref, View: view, Part: p.Name, Limit: d.PageLimit, ExpectedDigest: carrier.Digest(p.Raw)}
 	if p.Mutable {
 		q.ExpectedGeneration = d.Basis["memory_generation"]
 	}
@@ -136,7 +136,11 @@ func keysString(m map[string]string) []string {
 	return ks
 }
 func Error(kind, message string) Response {
-	return Response{Format: Format, Operation: "read", Kind: kind, IsError: true, Data: nil, Diagnostics: []carrier.Diagnostic{{Code: kind, Message: short(message, 300), Severity: "error"}}, Basis: map[string]string{}, Coverage: "unavailable", Limits: []string{}, Delivery: State{View: "summary", Lifetime: "none", Complete: true, Budget: Budget, NoNext: "Correct the request or repeat the original operation; no replacement bytes were supplied", Omissions: Omission{Note: "No successful read"}}}
+	note := "No successful read"
+	if len(message) > 300 {
+		note = fmt.Sprintf("Diagnostic excerpt; original has %d bytes and digest %s. Invalid input has no continuation", len(message), carrier.Digest([]byte(message)))
+	}
+	return Response{Format: Format, Operation: "read", Kind: short(kind, 64), IsError: true, Data: nil, Diagnostics: []carrier.Diagnostic{{Code: short(kind, 64), Message: short(message, 300), Severity: "error"}}, Basis: map[string]string{}, Coverage: "unavailable", Limits: []string{}, Delivery: State{View: "summary", Lifetime: "none", Complete: len(message) <= 300, Budget: Budget, NoNext: "Correct the request or repeat the original operation; no replacement bytes were supplied", Omissions: Omission{Note: note}}}
 }
 func cursor(q Request, offset int) string {
 	q.Cursor = ""
@@ -255,7 +259,11 @@ func Present(d Document, q Request) Response {
 	if q.View == "bytes" || p.Media != "json" {
 		return chunks(d, q, p, r, start)
 	}
-	if start == 0 {
+	fullAllowed := true
+	if values, ok := Value(p.Raw).([]any); ok && d.PageLimit > 0 && len(values) > d.PageLimit {
+		fullAllowed = false
+	}
+	if start == 0 && fullAllowed {
 		r.Data = json.RawMessage(p.Raw)
 		r.Delivery.Complete = true
 		r.Delivery.Encoding = "json"
@@ -286,7 +294,7 @@ func Present(d Document, q Request) Response {
 	r.Delivery.TotalItems = len(members)
 	r.Delivery.ReturnedBytes = 0
 	r.Delivery.Complete = false
-	for i := start; i < len(members); i++ {
+	for i := start; i < len(members) && (d.PageLimit <= 0 || i-start < d.PageLimit); i++ {
 		c := members[i]
 		x := item{Key: short(c.key, 100), KeyComplete: len(c.key) <= 100, Read: descriptor(d, c.part)}
 		value := Value(c.part.Raw)
@@ -344,7 +352,7 @@ func directory(d Document, q Request, p Part, r Response, start int) Response {
 	r.Delivery.Encoding = "part_directory"
 	r.Delivery.Offset = start
 	r.Delivery.TotalItems = len(d.Parts)
-	for i := start; i < len(d.Parts); i++ {
+	for i := start; i < len(d.Parts) && (d.PageLimit <= 0 || i-start < d.PageLimit); i++ {
 		candidate := append(append([]Descriptor{}, list...), descriptor(d, d.Parts[i]))
 		r.Data = map[string]any{"parts": candidate}
 		r.Delivery.Next = nil

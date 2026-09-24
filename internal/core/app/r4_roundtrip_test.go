@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/core/app"
+	"github.com/m0n0x41d/haft/internal/core/delivery"
 	"github.com/m0n0x41d/haft/internal/core/transport"
 )
 
@@ -100,7 +101,7 @@ func TestR4RecallJSONChangeCarrierRoundTrip(t *testing.T) {
 
 func r4Call(t *testing.T, s app.Service, q app.Request, kind string) map[string]any {
 	t.Helper()
-	q.Format = app.Format
+	q.Format = delivery.Format
 	// Both directions pass through the public JSON wire, as CLI/MCP clients do.
 	request, err := json.Marshal(q)
 	if err != nil {
@@ -110,8 +111,9 @@ func r4Call(t *testing.T, s app.Service, q app.Request, kind string) map[string]
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := s.Execute(context.Background(), decoded)
-	raw, err := json.Marshal(r)
+	r := s.Call(context.Background(), decoded)
+	raw := r4FullPublicResult(t, s, r)
+	_, err = json.Marshal(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,3 +188,75 @@ claims:
 ---
 Keep the original specification prose.
 `
+
+// Recover the complete authoring input through the public bounded read path.
+// No private projection or filesystem read substitutes for delivery.
+func r4FullPublicResult(t *testing.T, s app.Service, r delivery.Response) []byte {
+	t.Helper()
+	if r.Delivery.Catalog == nil {
+		t.Fatalf("no result directory: %+v", r)
+	}
+	q := *r.Delivery.Catalog
+	var selected *delivery.Request
+	for selected == nil {
+		b, _ := json.Marshal(q)
+		request, err := transport.DecodeRequest(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page := s.Call(context.Background(), request)
+		if delivery.Size(page) > delivery.Budget {
+			t.Fatal("oversized")
+		}
+		b, _ = json.Marshal(page.Data)
+		var entries struct {
+			Parts []delivery.Descriptor `json:"parts"`
+		}
+		json.Unmarshal(b, &entries)
+		for _, p := range entries.Parts {
+			if p.Name == "result" {
+				copy := p.Request
+				selected = &copy
+				break
+			}
+		}
+		if selected == nil {
+			if page.Delivery.Next == nil {
+				t.Fatalf("result missing: %+v", page)
+			}
+			q = *page.Delivery.Next
+		}
+	}
+	q = *selected
+	q.View = "bytes"
+	var raw []byte
+	for {
+		b, _ := json.Marshal(q)
+		request, err := transport.DecodeRequest(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		part := s.Call(context.Background(), request)
+		if delivery.Size(part) > delivery.Budget {
+			t.Fatal("oversized")
+		}
+		b, _ = json.Marshal(part.Data)
+		var data struct {
+			Bytes []byte `json:"bytes_base64"`
+		}
+		if err = json.Unmarshal(b, &data); err != nil {
+			t.Fatal(err)
+		}
+		if part.Delivery.Offset != len(raw) {
+			t.Fatal("noncontiguous")
+		}
+		raw = append(raw, data.Bytes...)
+		if part.Delivery.Next == nil {
+			if !part.Delivery.Complete {
+				t.Fatal("incomplete")
+			}
+			return raw
+		}
+		q = *part.Delivery.Next
+	}
+}

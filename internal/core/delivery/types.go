@@ -26,6 +26,7 @@ type Request struct {
 	Cursor             string `json:"cursor,omitempty"`
 	ExpectedDigest     string `json:"expected_digest,omitempty"`
 	ExpectedGeneration string `json:"expected_generation,omitempty"`
+	Limit              int    `json:"limit,omitempty"`
 }
 type Part struct {
 	Name    string `json:"name"`
@@ -47,6 +48,7 @@ type Document struct {
 	Summary     json.RawMessage      `json:"summary"`
 	Parts       []Part               `json:"parts"`
 	Unavailable string               `json:"continuation_unavailable,omitempty"`
+	PageLimit   int                  `json:"page_limit,omitempty"`
 }
 type Descriptor struct {
 	Name          string  `json:"part"`

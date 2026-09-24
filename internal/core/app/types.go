@@ -46,6 +46,18 @@ type Request struct {
 	Observation        *check.ObservationInput    `json:"observation,omitempty"`
 	CaptureCode        bool                       `json:"capture_code,omitempty"`
 	PriorCode          *CodeCapture               `json:"prior_code,omitempty"`
+	View               string                     `json:"view,omitempty"`
+	Part               string                     `json:"part,omitempty"`
+	Cursor             string                     `json:"cursor,omitempty"`
+	ExpectedDigest     string                     `json:"expected_digest,omitempty"`
+	Retain             []Retention                `json:"retain,omitempty"`
+	forDelivery        bool
+	payload            []byte
+}
+
+type Retention struct {
+	Ref  string `json:"ref"`
+	Part string `json:"part"`
 }
 
 // CodeCapture is an optional portable input for advisory code comparisons.
@@ -110,6 +122,9 @@ func (s Service) Execute(ctx context.Context, q Request) Result {
 	payload, err := json.Marshal(q)
 	if err != nil {
 		return failure(r, "invalid_request", err.Error())
+	}
+	if q.payload != nil {
+		payload = q.payload
 	}
 	if q.Operation == "remember" || q.Operation == "change" && q.Action != "preview" && q.Action != "list" && q.Action != "show" {
 		prior, found, err := s.memory().Replay(ctx, q.RequestID, carrier.Digest(payload))

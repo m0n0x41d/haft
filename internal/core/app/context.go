@@ -22,6 +22,9 @@ type ContextPage[T any] struct {
 }
 
 func contextPage[T any](items []T, q Request) ContextPage[T] {
+	if q.forDelivery {
+		return ContextPage[T]{Items: append([]T{}, items...), Total: len(items), Limit: len(items)}
+	}
 	limit := q.Limit
 	if limit == 0 {
 		limit = 50

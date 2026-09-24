@@ -13,6 +13,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/core/app"
 	"github.com/m0n0x41d/haft/internal/core/carrier"
+	"github.com/m0n0x41d/haft/internal/core/delivery"
 	"github.com/m0n0x41d/haft/internal/core/host"
 	"github.com/m0n0x41d/haft/internal/core/transport"
 )
@@ -22,8 +23,8 @@ var Version = "development"
 
 const help = `haft10 <operation> [action] [options]
 
-Operations: remember recall context impact fpf source check change recover
-  api --input FILE|-          Execute one complete haft.api/1 request
+Operations: remember recall context impact fpf source check change recover read
+  api --input FILE|-          Execute one complete haft.api/2 request
   serve                      Serve the single haft MCP tool on stdio
   init [--codex]              Install project-local instructions and Codex assets
   migrate --from-9x --dry-run ...  Stage an explicit source in a separate output root
@@ -41,7 +42,7 @@ Use api --input for exact CLI/MCP request parity. Other operations fill omitted
 format/operation/action fields; conflicting flags or input fields are rejected.
 JSON results go to stdout; transport diagnostics go to stderr. Structural check
 does not run tests. Check prepare and observe separate capture from execution.
-`
+` + "\n" + delivery.Guide + "\n"
 
 func main() { os.Exit(run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 func run(ctx context.Context, args []string, in io.Reader, out, log io.Writer) int {
@@ -74,6 +75,9 @@ func run(ctx context.Context, args []string, in io.Reader, out, log io.Writer) i
 	ref := f.String("ref", "", "exact reference")
 	query := f.String("query", "", "search query")
 	limit := f.Int("limit", 0, "maximum result count")
+	view := f.String("view", "", "summary, detail or bytes")
+	part := f.String("part", "", "returned named part; parts lists the directory")
+	cursor := f.String("cursor", "", "opaque returned continuation")
 	strict := f.Bool("strict", false, "strict structural validation")
 	codex := f.Bool("codex", false, "install project-local Codex assets")
 	if err := f.Parse(args); err != nil {
@@ -97,7 +101,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, log io.Writer) i
 	}
 	s := app.Service{Root: absolute, SourceRoot: *sourceRoot, SourceRepository: *sourceRepository}
 	if op == "serve" || op == "init" {
-		if action != "" || *input != "" || seen["ref"] || seen["query"] || seen["limit"] || seen["strict"] {
+		if action != "" || *input != "" || seen["ref"] || seen["query"] || seen["limit"] || seen["strict"] || seen["view"] || seen["part"] || seen["cursor"] {
 			return cliError(out, log, "invalid_arguments", fmt.Errorf("%s does not accept request fields", op))
 		}
 		if op == "serve" {
@@ -147,7 +151,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, log io.Writer) i
 		}
 	}
 	if op == "api" {
-		if *input == "" || action != "" || seen["ref"] || seen["query"] || seen["limit"] || seen["strict"] {
+		if *input == "" || action != "" || seen["ref"] || seen["query"] || seen["limit"] || seen["strict"] || seen["view"] || seen["part"] || seen["cursor"] {
 			return cliError(out, log, "invalid_arguments", fmt.Errorf("api requires --input and accepts no request overrides"))
 		}
 	} else {
@@ -156,7 +160,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, log io.Writer) i
 		}
 		request.Operation = op
 		if request.Format == "" {
-			request.Format = app.Format
+			request.Format = delivery.Format
 		}
 		if action != "" {
 			if request.Action != "" && request.Action != action {
@@ -182,6 +186,17 @@ func run(ctx context.Context, args []string, in io.Reader, out, log io.Writer) i
 			}
 			request.Limit = *limit
 		}
+		for name, pair := range map[string]struct {
+			target *string
+			value  string
+		}{"view": {&request.View, *view}, "part": {&request.Part, *part}, "cursor": {&request.Cursor, *cursor}} {
+			if seen[name] {
+				if fields[name] != nil && *pair.target != pair.value {
+					return cliError(out, log, "request_conflict", fmt.Errorf("%s differs from JSON input", name))
+				}
+				*pair.target = pair.value
+			}
+		}
 		if seen["strict"] {
 			if fields["strict"] != nil && request.Strict != *strict {
 				return cliError(out, log, "request_conflict", fmt.Errorf("strict differs from JSON input"))
@@ -189,7 +204,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, log io.Writer) i
 			request.Strict = *strict
 		}
 	}
-	result := s.Execute(ctx, request)
+	result := s.Call(ctx, request)
 	if exit := emit(out, result, log); exit != 0 {
 		return exit
 	}
@@ -206,7 +221,9 @@ func emit(out io.Writer, value any, log io.Writer) int {
 	return 0
 }
 func cliError(out, log io.Writer, code string, err error) int {
-	fmt.Fprintln(log, "haft10:", err)
-	emit(out, app.Result{Format: app.Format, Kind: "invalid", Data: nil, Diagnostics: []carrier.Diagnostic{{Code: code, Message: err.Error(), Severity: "error"}}, Basis: map[string]string{}, Coverage: "unavailable", Limits: []string{}}, log)
+	fmt.Fprintln(log, "haft10:", transport.BoundedDiagnostic(err.Error()))
+	result := delivery.Error("invalid", transport.BoundedDiagnostic(err.Error()))
+	result.Diagnostics[0].Code = code
+	emit(out, result, log)
 	return 2
 }

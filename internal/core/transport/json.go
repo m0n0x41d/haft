@@ -12,6 +12,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/core/app"
 	"github.com/m0n0x41d/haft/internal/core/carrier"
+	"github.com/m0n0x41d/haft/internal/core/delivery"
 )
 
 const MaxInputBytes = 16 << 20
@@ -224,11 +225,19 @@ func validateFields(v any, t reflect.Type, path string) error {
 func RequestSchema() map[string]any {
 	s := schema(reflect.TypeOf(app.Request{}))
 	p := s["properties"].(map[string]any)
-	p["format"].(map[string]any)["enum"] = []string{app.Format}
-	p["operation"].(map[string]any)["enum"] = []string{"remember", "recall", "context", "impact", "fpf", "source", "check", "change", "recover"}
+	p["format"].(map[string]any)["enum"] = []string{delivery.Format}
+	p["format"].(map[string]any)["description"] = "Public delivery version haft.api/2. Carrier and snapshot formats are unchanged."
+	p["operation"].(map[string]any)["enum"] = []string{"remember", "recall", "context", "impact", "fpf", "source", "check", "change", "recover", "read"}
+	p["operation"].(map[string]any)["description"] = "Use recall/query to discover records, recall/ref for a summary. Use operation read with a supplied request for selected detail or continuation; no filesystem access is needed."
+	p["view"].(map[string]any)["enum"] = []string{"summary", "detail", "bytes"}
+	p["view"].(map[string]any)["description"] = "summary is default. detail reads a chosen part, or lists members when large. bytes pages exact bytes with digest for bulk clients. Check delivery completeness and follow returned next_request."
+	p["part"].(map[string]any)["description"] = "Select a returned named part (claim, record, body, reports, diagnostics, snapshot, expected, observation, etc.) or part=parts to list all. Use returned child requests; do not replace a claim from an excerpt."
+	p["cursor"].(map[string]any)["description"] = "Opaque continuation bound to ref/view/part/digest and selection basis. Copy next_request unchanged. Stale requires repeating the original query."
+	p["expected_digest"].(map[string]any)["description"] = "Exact member SHA-256 from the returned read request; prevents mixing changed bytes."
+	p["retain"].(map[string]any)["description"] = "For remember only: append exact captured transient part bytes to the authored evidence body without downloading them into model context. Provide returned result ref and named part; does not invent evidence meaning."
 	p["action"].(map[string]any)["description"] = "recall: legacy or omitted; fpf/source: status, search, inspect; check: structural, prepare, observe; change: create, list, show, preview, apply, sync, archive, reopen, rebase, update; remember: terms or omitted."
 	p["carrier"].(map[string]any)["description"] = "Authored Markdown with YAML frontmatter. Explicit input fields are local trusted data; the adapter does not infer operator confirmation."
-	p["ref"].(map[string]any)["description"] = "Exact record/claim reference, source locator, or file:/dir:/sym: selector for the chosen operation."
+	p["ref"].(map[string]any)["description"] = "Exact record/claim reference, source locator or code selector. operation read accepts a returned pinned record ref or result:sha256 transient ref. Transient refs expire if cache is lost; they are not saved history."
 	p["request_id"].(map[string]any)["description"] = "Stable caller-generated idempotency key for a write; reuse only with identical payload."
 	p["expected_generation"].(map[string]any)["description"] = "Transaction basis from a previous result; required where the application requests optimistic concurrency."
 	p["limit"].(map[string]any)["minimum"] = 0
@@ -272,3 +281,17 @@ func schema(t reflect.Type) map[string]any {
 	}
 	return s
 }
+
+// BoundedDiagnostic makes malformed-input failures safe before a read result
+// exists. It explicitly reports omitted bytes; there is no fictional read ref.
+func BoundedDiagnostic(s string) string {
+	if len(s) <= 400 {
+		return s
+	}
+	n := 400
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return fmt.Sprintf("%s [diagnostic excerpt; %d bytes omitted; full digest %s; no continuation for invalid input]", s[:n], len(s)-n, carrier.Digest([]byte(s)))
+}
+func boundedDiagnostic(s string) string { return BoundedDiagnostic(s) }

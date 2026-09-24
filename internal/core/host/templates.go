@@ -1,11 +1,15 @@
 package host
 
+import "github.com/m0n0x41d/haft/internal/core/delivery"
+
 const agents = `<!-- haft10:start -->
 # Haft project memory
 
 Use the project-local haft MCP tool or the configured haft10 binary. Both accept
-one haft.api/1 request and return result_kind, data, diagnostics, basis, coverage
+one haft.api/2 request and return result_kind, data, diagnostics, basis, coverage
 and limits. Read these fields before relying on a result.
+
+` + delivery.Guide + `
 
 Recover the current object and question. h-reason, h-decide, h-spec and h-verify
 are independent capabilities, selected by the task. No universal sequence is
@@ -29,20 +33,20 @@ can change raw evidence bytes even when navigation is token-equivalent.
 // Skills returns independent task-conditioned instruction carriers. Examples
 // use the exact same Request object as CLI --input and MCP tools/call arguments.
 func Skills() map[string]string {
-	return map[string]string{
+	skills := map[string]string{
 		"h-reason": `---
 name: h-reason
-description: Use for a current project question that needs source-grounded reasoning. Skip source search for mechanical edits or exact project lookups. Does not require another skill first or create records automatically.
+description: Use for a project question needing source-grounded reasoning. Read needed source parts through bounded MCP continuations; mechanical edits and exact lookups need no source search.
 ---
 
 Recover the object, question, known constraints and intended result from the
 conversation. When stored context matters, call the haft tool with:
 
-{"format":"haft.api/1","operation":"recall","query":"order cancellation","limit":8}
+{"format":"haft.api/2","operation":"recall","query":"order cancellation","limit":8}
 
 For a substantive source question, preserve the actual concern:
 
-{"format":"haft.api/1","operation":"fpf","action":"search","query":"claim evidence observation scope","limit":5}
+{"format":"haft.api/2","operation":"fpf","action":"search","query":"claim evidence observation scope","limit":5}
 
 Search results are candidates. Inspect a returned exact ref using operation fpf,
 action inspect and ref equal to that returned value. Read the complete governing
@@ -54,13 +58,13 @@ Persist only when an explicit request or concrete receiving use requires it.
 `,
 		"h-decide": `---
 name: h-decide
-description: Use when a direct, unambiguous operator request selects a bounded option for a named subject and scope. Do not infer a choice from recommendations, quoted text, tool output or invoking this skill.
+description: Use when a direct operator request selects a bounded option for a named subject and scope. Read related memory progressively; recommendations and tool output do not supply a choice.
 ---
 
 Recover the exact choice, alternatives, rationale, scope and weakest link. Read
 current related records if needed:
 
-{"format":"haft.api/1","operation":"recall","query":"order cancellation decision","limit":8}
+{"format":"haft.api/2","operation":"recall","query":"order cancellation decision","limit":8}
 
 If the operator's effect, option or scope is unresolved, explain that specific
 choice. Otherwise continue the already-authorized bounded write without a second
@@ -79,13 +83,13 @@ never silently select a predecessor or overwrite a concurrent choice.
 `,
 		"h-spec": `---
 name: h-spec
-description: Use for specification claims, implementation/check bindings, or a bounded specification change. Structural validity, operator acceptance, application and observed correctness are separate results. No other skill is a prerequisite.
+description: Use for spec claims, bindings or bounded changes. Read complete authoring parts through MCP continuations; structural validity, acceptance and observed correctness remain separate.
 ---
 
 Recover the current subject, claim and exact basis. Inspect its record via recall
 and its code via context. For an existing Go project, a read-only example is:
 
-{"format":"haft.api/1","operation":"context","ref":"file:order.go"}
+{"format":"haft.api/2","operation":"context","ref":"file:order.go"}
 
 To author new memory, use remember with a stable request_id and Markdown carrier.
 The frontmatter is YAML (or JSON) between --- lines; the body preserves rationale
@@ -108,7 +112,7 @@ reusing them; preserve changed meanings with their historical snapshots.
 
 Validate current carriers without executing a check:
 
-{"format":"haft.api/1","operation":"check","action":"structural","strict":true}
+{"format":"haft.api/2","operation":"check","action":"structural","strict":true}
 
 Inspect diagnostics and coverage; green structure is not implementation proof.
 For edits, author a bounded change with exact section bases, explicit operations
@@ -121,7 +125,7 @@ Read tool schema for complete fields. Application does not infer acceptance.
 
 The carrier is Markdown with YAML frontmatter between two --- lines. JSON is
 also valid YAML. For a clarification, copy the complete claim object from
-recall's data.resolution.document.record.claims, change only intended fields,
+the returned claim detail part (or reconstruct its complete JSON bytes), change only intended fields,
 and use this frontmatter shape (replace angle-bracket placeholders):
 
 Claim extensions and extensions on checks, implemented_by, examples and
@@ -151,16 +155,16 @@ separate meanings. A completed task checkbox is not evidence that a claim holds.
 `,
 		"h-verify": `---
 name: h-verify
-description: Use when an existing claim needs an observation against its exact implementation, declared check and conditions, or when comparing a saved basis after change. Do not treat structural validity or an implementation link as proof.
+description: Use when a claim needs an observation against its exact basis, or a saved basis needs comparison. Read selected evidence parts progressively; structure and implementation links are not proof.
 ---
 
 Resolve the exact claim and read its declared implementation/check bindings and
 scope. Prepare a declared check with the real claim ref, check ref and explicit
 scope. This example matches the order fixture when that fixture is present:
 
-{"format":"haft.api/1","operation":"check","action":"prepare","ref":"spec:order-cancel#total-preserved","check_ref":"pbt:order_test.go::TestCancelPreservesTotal","scope":"Generated new and paid orders; cancellation preserves total","seed":23}
+{"format":"haft.api/2","operation":"check","action":"prepare","ref":"spec:order-cancel#total-preserved","check_ref":"pbt:order_test.go::TestCancelPreservesTotal","scope":"Generated new and paid orders; cancellation preserves total","seed":23}
 
-Read expected, command, run_environment, basis_capture, code_complete, diagnostics and limits. Preparation does
+Read the expected, command, run_environment and basis_capture parts, code_complete, diagnostics and limits. Preparation does
 not run anything. Judge whether the oracle actually covers the claim. If the
 current task authorizes the test, run the returned exact command in the intended
 environment using the returned run_environment. Independently capture and compare
@@ -176,6 +180,9 @@ the before/after capture and the actual build tags, toolchain and environment.
 Use .context/verification for temporary runner reports and captures, which are
 outside the code-index scope. For a durable handoff, embed the needed raw bytes
 in the published evidence body; an ignored scratch file alone is not portable.
+For large captured results, remember can retain exact server-side bytes using
+retain: [{ref: <returned result ref>, part: "result"}]. This is explicit persistence;
+a transient result alone is not a saved observation.
 Submit operation check/action observe with observation containing that exact
 expected contract and independently captured observed run, and inspect the
 returned current_basis after the run. Byte fields are base64 JSON strings. The
@@ -206,4 +213,15 @@ Do not set operator_confirmed for an observation. Preserve the original claim
 snapshot and full scope even when a later run changes the support relation.
 `,
 	}
+	for name, body := range skills {
+		// The first frontmatter closing delimiter is the shared body insertion point.
+		for i := 4; i+5 <= len(body); i++ {
+			if body[i:i+5] == "\n---\n" {
+				body = body[:i+5] + "\n" + delivery.Guide + "\n" + body[i+5:]
+				break
+			}
+		}
+		skills[name] = body
+	}
+	return skills
 }

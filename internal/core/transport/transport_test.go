@@ -15,13 +15,13 @@ import (
 
 func TestClosedDecode(t *testing.T) {
 	tests := []struct{ raw, want string }{
-		{`{"format":"haft.api/1","operation":"recall","operation":"remember"}`, "duplicate_field"},
-		{`{"format":"haft.api/1","operation":"recall","wat":1}`, "unknown_field"},
-		{`{"format":"haft.api/1","Operation":"recall"}`, "unknown_field"},
-		{`{"format":"haft.api/1","operation":"context","code_config":{"goos":"linux","wat":1}}`, "unknown_field"},
-		{`{"format":"haft.api/1","operation":"change","metadata":{"target":{"operator_confirmed":true,"OperatorConfirmed":false}}}`, "unknown_field"},
-		{`{"format":"haft.api/1","operation":null}`, "null scalar"},
-		{`{"format":"haft.api/1","operation":"recall"} {}`, "trailing_json"},
+		{`{"format":"haft.api/2","operation":"recall","operation":"remember"}`, "duplicate_field"},
+		{`{"format":"haft.api/2","operation":"recall","wat":1}`, "unknown_field"},
+		{`{"format":"haft.api/2","Operation":"recall"}`, "unknown_field"},
+		{`{"format":"haft.api/2","operation":"context","code_config":{"goos":"linux","wat":1}}`, "unknown_field"},
+		{`{"format":"haft.api/2","operation":"change","metadata":{"target":{"operator_confirmed":true,"OperatorConfirmed":false}}}`, "unknown_field"},
+		{`{"format":"haft.api/2","operation":null}`, "null scalar"},
+		{`{"format":"haft.api/2","operation":"recall"} {}`, "trailing_json"},
 		{`[]`, "expected an object"},
 		{`{"format":`, "invalid_json"},
 		{`{"snapshots":{"x":"","\u0078":""}}`, "duplicate_field"},
@@ -36,7 +36,7 @@ func TestClosedDecode(t *testing.T) {
 			}
 		})
 	}
-	q, err := DecodeRequest([]byte(`{"format":"haft.api/1","operation":"recall","metadata":{"key":{"operator_confirmed":false}},"snapshots":{"sha256:abc":"AAE="}}`))
+	q, err := DecodeRequest([]byte(`{"format":"haft.api/2","operation":"recall","metadata":{"key":{"operator_confirmed":false}},"snapshots":{"sha256:abc":"AAE="}}`))
 	if err != nil || !bytes.Equal(q.Snapshots["sha256:abc"], []byte{0, 1}) {
 		t.Fatal(q, err)
 	}
@@ -106,10 +106,10 @@ func TestPersistentClientsFreshStateAndParity(t *testing.T) {
 	s := app.Service{Root: t.TempDir()}
 	a := newClient(t, s)
 	b := newClient(t, s)
-	q := app.Request{Format: app.Format, Operation: "recall"}
+	q := app.Request{Format: "haft.api/2", Operation: "recall"}
 	fmt.Fprint(a.in, call(2, q))
 	before := rpcRead(t, a.out)
-	write := app.Request{Format: app.Format, Operation: "remember", RequestID: "transport-note", Carrier: "---\nkind: note\ntitle: Adapter observation\nabout: domain:Order\n---\nBounded test note.\n"}
+	write := app.Request{Format: "haft.api/2", Operation: "remember", RequestID: "transport-note", Carrier: "---\nkind: note\ntitle: Adapter observation\nabout: domain:Order\n---\nBounded test note.\n"}
 	fmt.Fprint(b.in, call(2, write))
 	written := rpcRead(t, b.out)
 	if written["result"].(map[string]any)["structuredContent"].(map[string]any)["result_kind"] != "written" {
@@ -118,7 +118,7 @@ func TestPersistentClientsFreshStateAndParity(t *testing.T) {
 	fmt.Fprint(a.in, call(3, q))
 	after := rpcRead(t, a.out)
 	actual := after["result"].(map[string]any)["structuredContent"]
-	raw, _ := json.Marshal(s.Execute(context.Background(), q))
+	raw, _ := json.Marshal(s.Call(context.Background(), q))
 	var want any
 	json.Unmarshal(raw, &want)
 	if !reflect.DeepEqual(actual, want) {
@@ -139,9 +139,9 @@ func TestNotificationsErrorsAndFrameRecovery(t *testing.T) {
 	var in strings.Builder
 	in.WriteString(initialize())
 	in.WriteString(`{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n")
-	in.WriteString(`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"haft","arguments":{"format":"haft.api/1","operation":"remember","carrier":"untrusted notification"}}}` + "\n")
+	in.WriteString(`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"haft","arguments":{"format":"haft.api/2","operation":"remember","carrier":"untrusted notification"}}}` + "\n")
 	in.WriteString(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}` + "\n")
-	in.WriteString(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"haft","arguments":{"format":"haft.api/1","operation":"recall","extra":1}}}` + "\n")
+	in.WriteString(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"haft","arguments":{"format":"haft.api/2","operation":"recall","extra":1}}}` + "\n")
 	in.WriteString(strings.Repeat("x", MaxInputBytes+1) + "\n")
 	in.WriteString(`{"jsonrpc":"2.0","id":4,"method":"ping"}` + "\n")
 	var out bytes.Buffer
@@ -154,5 +154,32 @@ func TestNotificationsErrorsAndFrameRecovery(t *testing.T) {
 	}
 	if !bytes.Contains(lines[1], []byte(`"name":"haft"`)) || !bytes.Contains(lines[2], []byte("unknown_field")) || !bytes.Contains(lines[3], []byte("input_limit")) || !bytes.Contains(lines[4], []byte(`"id":4`)) {
 		t.Fatal("incorrect MCP response")
+	}
+}
+
+func TestBoundedMalformedRequestsAndHostIndependentDiscovery(t *testing.T) {
+	s := app.Service{Root: t.TempDir()}
+	c := newClient(t, s)
+	fmt.Fprint(c.in, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`+"\n")
+	list := rpcRead(t, c.out)
+	raw, _ := json.Marshal(list)
+	for _, word := range []string{"haft.api/2", "next_request", "expected_digest", "parts", "cursor", "stale"} {
+		if !bytes.Contains(bytes.ToLower(raw), []byte(word)) {
+			t.Fatalf("missing discovery %s", word)
+		}
+	}
+	long := strings.Repeat("кириллица\\\"\n", 100000)
+	key, _ := json.Marshal(long)
+	fmt.Fprintf(c.in, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"haft\",\"arguments\":{\"format\":\"haft.api/2\",\"operation\":\"recall\",%s:1}}}\n", key)
+	invalid := rpcRead(t, c.out)
+	raw, _ = json.Marshal(invalid)
+	if len(raw) > 8192 || invalid["error"] == nil || !bytes.Contains(raw, []byte("omitted")) {
+		t.Fatal("unbounded or dishonest invalid input")
+	}
+	fmt.Fprint(c.in, call(4, app.Request{Format: "haft.api/1", Operation: "remember", Carrier: "old wire cannot mutate"}))
+	old := rpcRead(t, c.out)
+	raw, _ = json.Marshal(old)
+	if !bytes.Contains(raw, []byte("unsupported_format")) || !bytes.Contains(raw, []byte("haft.api/2")) {
+		t.Fatal("old wire silently changed")
 	}
 }

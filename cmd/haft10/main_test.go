@@ -28,7 +28,7 @@ func invoke(t *testing.T, args []string, input string) (int, map[string]any, str
 }
 func TestCLIConvenienceAndAPIParity(t *testing.T) {
 	root := t.TempDir()
-	q := app.Request{Format: app.Format, Operation: "recall", Query: "bounded", Limit: 4}
+	q := app.Request{Format: "haft.api/2", Operation: "recall", Query: "bounded", Limit: 4}
 	raw, _ := json.Marshal(q)
 	code, api, log := invoke(t, []string{"api", "--root", root, "--input", "-"}, string(raw))
 	if code != 0 || log != "" {
@@ -38,7 +38,7 @@ func TestCLIConvenienceAndAPIParity(t *testing.T) {
 	if code != 0 || log != "" || !reflect.DeepEqual(api, cli) {
 		t.Fatal(code, api, cli, log)
 	}
-	wantRaw, _ := json.Marshal((app.Service{Root: root}).Execute(context.Background(), q))
+	wantRaw, _ := json.Marshal((app.Service{Root: root}).Call(context.Background(), q))
 	var want map[string]any
 	json.Unmarshal(wantRaw, &want)
 	if !reflect.DeepEqual(api, want) {
@@ -51,12 +51,12 @@ func TestCLIRejectsMalformedAndConflictingInputs(t *testing.T) {
 		args        []string
 		input, code string
 	}{
-		{[]string{"api", "--input", "-"}, `{"format":"haft.api/1","operation":"recall","wat":true}`, "input_decode"},
+		{[]string{"api", "--input", "-"}, `{"format":"haft.api/2","operation":"recall","wat":true}`, "input_decode"},
 		{[]string{"api", "--input", "-"}, `{"operation":"recall","operation":"remember"}`, "input_decode"},
 		{[]string{"recall", "--input", "-", "--limit", "4"}, `{"limit":0}`, "request_conflict"},
 		{[]string{"check", "--input", "-", "--strict"}, `{"strict":false}`, "request_conflict"},
-		{[]string{"api", "--query", "override", "--input", "-"}, `{"format":"haft.api/1","operation":"recall"}`, "invalid_arguments"},
-		{[]string{"recall", "--input", "-"}, `{"format":"haft.api/1","operation":"remember"}`, "request_conflict"},
+		{[]string{"api", "--query", "override", "--input", "-"}, `{"format":"haft.api/2","operation":"recall"}`, "invalid_arguments"},
+		{[]string{"recall", "--input", "-"}, `{"format":"haft.api/2","operation":"remember"}`, "request_conflict"},
 	} {
 		args := append(tc.args, "--root", root)
 		exit, value, log := invoke(t, args, tc.input)
@@ -78,7 +78,7 @@ func TestActualBinaryCLIMCPAndLocalInit(t *testing.T) {
 		t.Fatal(err, string(out))
 	}
 	root := t.TempDir()
-	input := `{"format":"haft.api/1","operation":"recall"}`
+	input := `{"format":"haft.api/2","operation":"recall"}`
 	cli := exec.Command(binary, "api", "--input", "-", "--root", root)
 	cli.Stdin = strings.NewReader(input)
 	cliOut, err := cli.Output()

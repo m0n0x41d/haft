@@ -10,6 +10,7 @@ import (
 	"io"
 
 	"github.com/m0n0x41d/haft/internal/core/app"
+	"github.com/m0n0x41d/haft/internal/core/delivery"
 )
 
 // Server keeps transport state only. Execute captures fresh application state on
@@ -49,7 +50,7 @@ func (s Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 		if err != nil && !errors.Is(err, io.EOF) {
 			if errors.Is(err, errFrameLimit) {
-				if e := enc.Encode(response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32700, err.Error()}}); e != nil {
+				if e := enc.Encode(response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32700, boundedDiagnostic(err.Error())}}); e != nil {
 					return e
 				}
 				continue
@@ -61,7 +62,7 @@ func (s Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 		var request envelope
 		if err := Decode(raw, &request); err != nil {
-			if e := enc.Encode(response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32700, err.Error()}}); e != nil {
+			if e := enc.Encode(response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32700, boundedDiagnostic(err.Error())}}); e != nil {
 				return e
 			}
 			continue
@@ -74,13 +75,16 @@ func (s Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		_ = json.Unmarshal(id, &idValue)
 		_, stringID := idValue.(string)
 		_, numberID := idValue.(float64)
-		if request.JSONRPC != "2.0" || (!stringID && !numberID) {
+		if request.JSONRPC != "2.0" || (!stringID && !numberID) || len(id) > 256 {
 			if e := enc.Encode(response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32600, "Invalid JSON-RPC request or id"}}); e != nil {
 				return e
 			}
 			continue
 		}
 		result, rpcErr := s.dispatch(ctx, request, &initialized)
+		if rpcErr != nil {
+			rpcErr.Message = boundedDiagnostic(rpcErr.Message)
+		}
 		if e := enc.Encode(response{JSONRPC: "2.0", ID: id, Result: result, Error: rpcErr}); e != nil {
 			return e
 		}
@@ -141,7 +145,7 @@ func (s Server) dispatch(ctx context.Context, q envelope, initialized *bool) (an
 			version = "2025-06-18"
 		}
 		*initialized = true
-		return map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{"listChanged": false}}, "serverInfo": map[string]any{"name": "haft10", "version": s.Version}, "instructions": "Use the haft tool with one haft.api/1 request. Read result_kind, diagnostics, basis, coverage and limits. Source retrieval and check preparation do not establish claim satisfaction. Explicit write inputs are trusted local data; never manufacture operator confirmation."}, nil
+		return map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{"listChanged": false}}, "serverInfo": map[string]any{"name": "haft10", "version": s.Version}, "instructions": delivery.Guide}, nil
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
@@ -160,7 +164,7 @@ func (s Server) dispatch(ctx context.Context, q envelope, initialized *bool) (an
 				return invalid(fmt.Errorf("unsupported cursor"))
 			}
 		}
-		return map[string]any{"tools": []any{map[string]any{"name": "haft", "description": "Read or write project records; retrieve source; navigate Go implementation and declared checks; prepare/observe checks; preview/apply specification changes. Choose operation and action in the shared versioned API. Writes require complete explicit request data and application concurrency checks. Skills are independent, conditional capabilities.", "inputSchema": RequestSchema(), "annotations": map[string]any{"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false}}}}, nil
+		return map[string]any{"tools": []any{map[string]any{"name": "haft", "description": "Read/write project records, retrieve source, navigate Go, prepare/observe checks and preview/apply changes. " + delivery.Guide + " Explicit writes are trusted local inputs, not operator attestation.", "inputSchema": RequestSchema(), "annotations": map[string]any{"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false}}}}, nil
 	case "tools/call":
 		if !*initialized {
 			return nil, &rpcError{-32002, "Initialize the server first"}
@@ -180,12 +184,8 @@ func (s Server) dispatch(ctx context.Context, q envelope, initialized *bool) (an
 		if err != nil {
 			return invalid(err)
 		}
-		result := s.Service.Execute(ctx, request)
-		raw, err := json.Marshal(result)
-		if err != nil {
-			return nil, &rpcError{-32603, "Cannot encode application result"}
-		}
-		return map[string]any{"content": []any{map[string]any{"type": "text", "text": string(raw)}}, "structuredContent": result, "isError": result.Failed()}, nil
+		result := s.Service.Call(ctx, request)
+		return delivery.MCPResult(result), nil
 	default:
 		return nil, &rpcError{-32601, "Method not found"}
 	}

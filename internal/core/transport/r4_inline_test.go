@@ -7,7 +7,7 @@ import (
 )
 
 func TestR4InlineClaimExtensionsCrossClosedTransport(t *testing.T) {
-	request := `{"format":"haft.api/1","operation":"change","action":"update","revision":{"reason":"Edit extensions","patches":[{"base":"exact-base","operations":[{"op":"MODIFIED","claim_id":"rule","claim":{"id":"rule","kind":"guard","text":"Scope","x-bound":7,"extra":{"literal":"keep"},"checks":[{"ref":"manual:review","covers":"Review","x-check":true}],"implemented_by":[{"ref":"file:order.go","covers":"Body","x-binding":{"nested":[1,2]}}],"examples":[{"id":"case","text":"Scenario","x-example":9}],"evidence_inputs":[{"ref":"exact-use","applicability":"Scope","x-input":"keep"}]},"reason":"Explicit edit"}]}]}}`
+	request := `{"format":"haft.api/2","operation":"change","action":"update","revision":{"reason":"Edit extensions","patches":[{"base":"exact-base","operations":[{"op":"MODIFIED","claim_id":"rule","claim":{"id":"rule","kind":"guard","text":"Scope","x-bound":7,"extra":{"literal":"keep"},"checks":[{"ref":"manual:review","covers":"Review","x-check":true}],"implemented_by":[{"ref":"file:order.go","covers":"Body","x-binding":{"nested":[1,2]}}],"examples":[{"id":"case","text":"Scenario","x-example":9}],"evidence_inputs":[{"ref":"exact-use","applicability":"Scope","x-input":"keep"}]},"reason":"Explicit edit"}]}]}}`
 	q, err := DecodeRequest([]byte(request))
 	if err != nil {
 		t.Fatal(err)

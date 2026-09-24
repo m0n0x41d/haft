@@ -19,7 +19,7 @@ func TestReplayOutcomesAgreeAcrossCLIAndMCP(t *testing.T) {
 	for _, kind := range []string{"replayed", "request_conflict", "replay_conflict"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
-			q := map[string]any{"format": "haft.api/1", "operation": "remember", "request_id": "once", "carrier": "---\nkind: note\ntitle: Preserve edited note\nabout: domain:Replay\n---\nOriginal body.\n"}
+			q := map[string]any{"format": "haft.api/2", "operation": "remember", "request_id": "once", "carrier": "---\nkind: note\ntitle: Preserve edited note\nabout: domain:Replay\n---\nOriginal body.\n"}
 			payload, _ := json.Marshal(q)
 			exit, first, _ := invoke(t, []string{"api", "--root", root, "--input", "-"}, string(payload))
 			if exit != 0 || first["result_kind"] != "written" {

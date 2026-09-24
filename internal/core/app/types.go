@@ -191,7 +191,7 @@ func (r Result) Failed() bool {
 		}
 	}
 	switch r.Kind {
-	case "invalid", "unavailable", "conflict", "request_conflict", "concurrent_write", "path_conflict", "recovery_conflict", "queue_conflict", "interrupted", "publication_pending", "commit_outcome_unknown", "unsupported", "assertion_failure", "environment_failure", "unattributable", "not_run", "skipped":
+	case "invalid", "unavailable", "conflict", "request_conflict", "replay_conflict", "concurrent_write", "path_conflict", "recovery_conflict", "queue_conflict", "interrupted", "publication_pending", "commit_outcome_unknown", "unsupported", "assertion_failure", "environment_failure", "unattributable", "not_run", "skipped":
 		return true
 	}
 	return false

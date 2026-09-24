@@ -382,10 +382,10 @@ func directory(d Document, q Request, p Part, r Response, start int) Response {
 	return r
 }
 func chunks(d Document, q Request, p Part, r Response, start int) Response {
-	if start > len(p.Raw) || (q.View != "bytes" && p.Media == "text" && start < len(p.Raw) && !utf8.RuneStart(p.Raw[start])) {
+	textMode := q.View != "bytes" && p.Media == "text" && utf8.Valid(p.Raw)
+	if start > len(p.Raw) || (textMode && start < len(p.Raw) && !utf8.RuneStart(p.Raw[start])) {
 		return Error("invalid_cursor", "Offset outside member or not a UTF-8 boundary")
 	}
-	textMode := q.View != "bytes" && p.Media == "text" && utf8.Valid(p.Raw)
 	build := func(n int) Response {
 		end := start + n
 		if textMode {

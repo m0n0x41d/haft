@@ -242,32 +242,27 @@ func TestRunnerBuildAgreesWithGoSelectedTestPackages(t *testing.T) {
 	if err := cmd.Run(); err != nil {
 		t.Fatal(err, stderr.String())
 	}
-	actual := map[string]bool{}
-	decoder := json.NewDecoder(&stdout)
-	for {
-		var pkg struct {
-			Dir                                string
-			GoFiles, SFiles, HFiles, SysoFiles []string
+	physical, err := filepath.EvalSymlinks(s.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked := filepath.Join(t.TempDir(), "project-link")
+	if err := os.Symlink(physical, linked); err != nil {
+		t.Fatal(err)
+	}
+	var actual map[string]bool
+	for _, root := range []string{s.Root, physical, linked} {
+		selected := runnerSelectedInputs(t, root, stdout.Bytes())
+		if len(selected) == 0 {
+			t.Fatalf("go list selected no local inputs for %s", root)
 		}
-		err := decoder.Decode(&pkg)
-		if err == io.EOF {
-			break
+		if actual != nil && !sameJSON(selected, actual) {
+			t.Fatalf("symlink/physical roots disagree: %v != %v", selected, actual)
 		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		dir, err := filepath.Rel(s.Root, pkg.Dir)
-		if err != nil || dir == ".." || strings.HasPrefix(dir, ".."+string(filepath.Separator)) {
-			continue
-		}
-		for _, names := range [][]string{pkg.GoFiles, pkg.SFiles, pkg.HFiles, pkg.SysoFiles} {
-			for _, name := range names {
-				if filepath.IsAbs(name) {
-					continue
-				} // generated test main in the Go build cache
-				actual[filepath.ToSlash(filepath.Join(dir, name))] = true
-			}
-		}
+		actual = selected
+	}
+	if outside := runnerSelectedInputs(t, t.TempDir(), stdout.Bytes()); len(outside) != 0 {
+		t.Fatalf("external packages accepted as local: %v", outside)
 	}
 	captured := prepared["basis_capture"].(CheckBasisCapture).DependencyFiles
 	for p := range actual {
@@ -286,6 +281,52 @@ func TestRunnerBuildAgreesWithGoSelectedTestPackages(t *testing.T) {
 	}
 	sort.Strings(names)
 	t.Logf("independent go list -test -deps local compilation inputs: %v", names)
+}
+
+func runnerSelectedInputs(t *testing.T, root string, raw []byte) map[string]bool {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := map[string]bool{}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	for {
+		var pkg struct {
+			Dir                                string
+			GoFiles, SFiles, HFiles, SysoFiles []string
+		}
+		err := decoder.Decode(&pkg)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pkg.Dir == "" { // Synthetic packages have no filesystem directory.
+			continue
+		}
+		physical, err := filepath.EvalSymlinks(pkg.Dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir, err := filepath.Rel(root, physical)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dir == ".." || strings.HasPrefix(dir, ".."+string(filepath.Separator)) {
+			continue
+		}
+		for _, names := range [][]string{pkg.GoFiles, pkg.SFiles, pkg.HFiles, pkg.SysoFiles} {
+			for _, name := range names {
+				if filepath.IsAbs(name) {
+					continue
+				} // generated test main in the Go build cache
+				actual[filepath.ToSlash(filepath.Join(dir, name))] = true
+			}
+		}
+	}
+	return actual
 }
 
 func TestObserveRetainsHistoricalOracleBytesAndRejectsChangedConditions(t *testing.T) {

@@ -125,7 +125,10 @@ func (d Document) part(name string) (Part, error) {
 		for i, p := range d.Parts {
 			names[i] = p.Name
 		}
-		return JSON("parts", names, false), nil
+		// The index bytes identify the ordered names, while its generation binds
+		// the current selection described by the directory (including relations).
+		// Immutable member requests keep their independent content-only basis.
+		return JSON("parts", names, true), nil
 	}
 	segments := strings.Split(name, "/")
 	if len(segments) > 64 {

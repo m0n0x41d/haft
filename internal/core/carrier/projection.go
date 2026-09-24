@@ -490,6 +490,14 @@ func selectClaim(d Document, r Ref) Resolution {
 // ValidateSuccessor is an admission check over a transaction-current capture.
 // expectedHeads is the complete exact live head set, not merely record IDs.
 func ValidateSuccessor(r Record, p Projection, snapshots map[string][]byte, expectedHeads []string) []Diagnostic {
+	return ValidateSuccessorWithReferences(r, p, p, snapshots, expectedHeads)
+}
+
+// ValidateSuccessorWithReferences keeps admission and head checks on the
+// transaction-current projection while resolving relations against a complete
+// prospective batch. The caller must also validate that batch's projected
+// entries before publishing it; this does not admit duplicate output identities.
+func ValidateSuccessorWithReferences(r Record, p, references Projection, snapshots map[string][]byte, expectedHeads []string) []Diagnostic {
 	ds := Validate(r, false)
 	if HasErrors(ds) {
 		return ds
@@ -604,7 +612,7 @@ func ValidateSuccessor(r Record, p Projection, snapshots map[string][]byte, expe
 			}
 		}
 	}
-	ds = append(ds, p.ValidateReferences(r)...)
+	ds = append(ds, references.ValidateReferences(r)...)
 	return ds
 }
 func sameSet(a, b map[string]bool) bool {

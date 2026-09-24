@@ -242,6 +242,9 @@ func (s Service) change(ctx context.Context, q Request, r Result, v store.View, 
 		outputs := appendSnapshot(nil, strings.Split(ref, "@")[1], blob)
 		newRefs := []string{}
 		snaps := v.AllSnapshots()
+		documents := append([]carrier.Document{}, v.Documents...)
+		// Materialize the entire package before resolving any output's relations.
+		// Another output may introduce the referenced claim in this publication.
 		for _, out := range preview.Outputs {
 			m := q.Metadata[out.Base]
 			if m.ID == "" {
@@ -261,13 +264,6 @@ func (s Service) change(ctx context.Context, q Request, r Result, v store.View, 
 				return r
 			}
 			doc := carrier.Parse(raw)
-			base, _ := carrier.ParseRef(out.Base)
-			ds = carrier.ValidateSuccessor(doc.Record, v.Projection, snaps, v.Projection.Heads(base.RecordID))
-			r.Diagnostics = append(r.Diagnostics, ds...)
-			if carrier.HasErrors(ds) {
-				r.Kind = "conflict"
-				return r
-			}
 			for _, previous := range doc.Record.Supersedes {
 				p, _ := carrier.ParseRef(previous)
 				outputs = appendSnapshot(outputs, p.Digest, snaps[p.Digest])
@@ -278,6 +274,23 @@ func (s Service) change(ctx context.Context, q Request, r Result, v store.View, 
 				return failure(r, "interpretation_basis", err.Error())
 			}
 			newRefs = append(newRefs, newRef)
+			doc.Edition = strings.Split(newRef, "@")[1]
+			documents = append(documents, doc)
+		}
+		stagedSnapshots := publicationSnapshots(v, outputs)
+		prospective := carrier.ProjectCaptured(documents, v.CurrentSnapshots, stagedSnapshots)
+		for i, out := range preview.Outputs {
+			entry := prospective.Entries[len(v.Documents)+i]
+			base, _ := carrier.ParseRef(out.Base)
+			// Publication cannot change the head set against which admission was
+			// requested. Only relation resolution uses the prospective projection.
+			ds := carrier.ValidateSuccessorWithReferences(entry.Document.Record, v.Projection, prospective, stagedSnapshots, v.Projection.Heads(base.RecordID))
+			r.Diagnostics = append(r.Diagnostics, ds...)
+			r.Diagnostics = append(r.Diagnostics, entry.Diagnostics...)
+		}
+		if carrier.HasErrors(r.Diagnostics) {
+			r.Kind = "conflict"
+			return r
 		}
 		log, err := json.Marshal(struct {
 			Format  string                `json:"format"`

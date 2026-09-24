@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"sort"
 	"strings"
 
 	"github.com/m0n0x41d/haft/internal/core/carrier"
@@ -75,13 +74,22 @@ func (s Service) check(q Request, r Result, v store.View) Result {
 		probe.Seed = q.Observation.Expected.Basis.Seed
 		contract, _, _, _, err := s.prepareCheck(probe, v)
 		currentness := "unknown"
+		declared := err == nil
 		if err == nil {
-			currentness = "changed"
-			if sameJSON(contract.Basis, q.Observation.Expected.Basis) {
-				currentness = "same"
+			if mismatch := check.DeclarationMismatch(q.Observation.Expected, contract); mismatch != "" {
+				declared = false
+				// Preserve the independently classified supplied observation, but do
+				// not attribute it to a known contradictory declared oracle.
+				r.Kind = check.Unattributable
+				r.Diagnostics = append(r.Diagnostics, carrier.Diagnostic{Code: "declared_check_mismatch", Message: mismatch, Severity: "warning"})
+			} else {
+				currentness = "changed"
+				if sameJSON(contract.Basis, q.Observation.Expected.Basis) {
+					currentness = "same"
+				}
 			}
 		}
-		r.Data = map[string]any{"observation": observation, "current_basis": currentness, "declared_check_binding": err == nil}
+		r.Data = map[string]any{"observation": observation, "current_basis": currentness, "declared_check_binding": declared}
 		if err != nil {
 			r.Diagnostics = append(r.Diagnostics, carrier.Diagnostic{Code: "binding_unresolved", Message: err.Error(), Severity: "warning"})
 		}
@@ -102,12 +110,9 @@ func (s Service) check(q Request, r Result, v store.View) Result {
 		r.Coverage = "degraded"
 	}
 	r.Diagnostics = append(r.Diagnostics, index.Diagnostics...)
-	cgo := "0"
-	if index.Config.CGOEnabled {
-		cgo = "1"
-	}
+	runEnvironment, _ := code.GoTestEnvironment(index.Config) // validated by prepareCheck
 	r.Data = map[string]any{"expected": contract, "command": command, "code_complete": index.Complete, "runner_started": false, "basis_capture": captured,
-		"run_environment":        map[string]string{"GOOS": index.Config.GOOS, "GOARCH": index.Config.GOARCH, "CGO_ENABLED": cgo, "GOTOOLCHAIN": "local", "GOWORK": "off", "GOFLAGS": ""},
+		"run_environment":        runEnvironment,
 		"toolchain_verification": map[string]any{"command": []string{"go", "version"}, "expected": index.Config.Toolchain}}
 	r.Limits = append(r.Limits, "Caller reviews whether the declared oracle covers the claim, runs the exact command, and supplies captured output to observe")
 	r.Limits = append(r.Limits, "External imports rely on the declared toolchain and captured module manifests; external implementation bytes and arbitrary runtime inputs are outside local inspection")
@@ -170,15 +175,12 @@ func (s Service) prepareCheck(q Request, v store.View) (check.Contract, []string
 		return contract, nil, index, captured, fmt.Errorf("oracle symbol %s", resolved.Kind)
 	}
 	oracle := resolved.Candidates[0]
-	if !strings.HasSuffix(oracle.Path, "_test.go") || !strings.HasPrefix(oracle.Name, "Test") {
+	if oracle.Kind != "func" || oracle.Name == "TestMain" || !strings.HasSuffix(oracle.Path, "_test.go") || !strings.HasPrefix(oracle.Name, "Test") {
 		return contract, nil, index, captured, fmt.Errorf("selected declaration is not a Go test")
 	}
 	implementations := map[string]string{}
 	dependencyFiles := map[string]bool{}
-	externalImports := map[string]bool{}
-	selectors := []string{symbol}
 	for _, impl := range found.Claim.ImplementedBy {
-		selectors = append(selectors, impl.Ref)
 		res := index.Resolve(impl.Ref)
 		if res.Kind != "exact" {
 			return contract, nil, index, captured, fmt.Errorf("implementation %s: %s", impl.Ref, res.Kind)
@@ -194,14 +196,21 @@ func (s Service) prepareCheck(q Request, v store.View) (check.Contract, []string
 	if len(implementations) == 0 {
 		return contract, nil, index, captured, fmt.Errorf("claim has no resolved implementation basis")
 	}
-	for _, selector := range selectors {
-		related := index.Related(selector)
-		for _, imported := range related.ExternalDependencies {
-			externalImports[imported] = true
+	build, err := index.GoTestBuild(oracle.Path)
+	if err != nil {
+		return contract, nil, index, captured, err
+	}
+	for _, p := range build.Files {
+		dependencyFiles[p] = true
+	}
+	registrations := 0
+	for _, candidate := range index.Symbols {
+		if candidate.Kind == "func" && candidate.Name == oracle.Name && path.Dir(candidate.Path) == path.Dir(oracle.Path) && strings.HasSuffix(candidate.Path, "_test.go") && dependencyFiles[candidate.Path] {
+			registrations++
 		}
-		for _, p := range related.DependencyFiles {
-			dependencyFiles[p] = true
-		}
+	}
+	if registrations != 1 {
+		return contract, nil, index, captured, fmt.Errorf("oracle name has %d selected test registrations; one unambiguous declaration is required", registrations)
 	}
 	dependencies := map[string]string{}
 	for _, file := range index.Files {
@@ -217,33 +226,25 @@ func (s Service) prepareCheck(q Request, v store.View) (check.Contract, []string
 		}
 	}
 	dependencyBytes, _ := json.Marshal(struct {
-		Config code.Config       `json:"config"`
-		Files  map[string]string `json:"files"`
-	}{index.Config, dependencies})
-	external := []string{}
-	for imported := range externalImports {
-		external = append(external, imported)
-	}
-	sort.Strings(external)
+		Version string            `json:"version"`
+		Config  code.Config       `json:"config"`
+		Files   map[string]string `json:"files"`
+	}{code.TestBuildVersion, index.Config, dependencies})
 	encoded, _ := json.Marshal(implementations)
-	pkg := ""
-	for _, p := range index.Packages {
-		for _, f := range p.Files {
-			if f == oracle.Path {
-				pkg = p.ImportPath
-			}
-		}
-	}
-	if pkg == "" {
-		return contract, nil, index, captured, fmt.Errorf("test package identity unresolved")
-	}
 	conditions := []string{binding.Covers}
 	if binding.Conditions != "" {
 		conditions = append(conditions, binding.Conditions)
 	}
-	contract = check.Contract{Ref: binding.Ref, Selector: check.Selector{Package: pkg, Test: oracle.Name}, Scope: q.Scope, FailureContract: q.FailureContract, FailurePattern: q.FailurePattern,
+	contract = check.Contract{Ref: binding.Ref, Selector: check.Selector{Package: build.Package, Test: oracle.Name}, Scope: q.Scope, FailureContract: q.FailureContract, FailurePattern: q.FailurePattern,
 		Basis: check.Basis{Claim: found.Document.Record.ID + "@" + found.Document.Edition + "#" + found.Claim.ID, Code: carrier.Digest(encoded), Check: oracle.RawDigest, Dependencies: carrier.Digest(dependencyBytes), Conditions: conditions, Seed: q.Seed,
-			Environment: map[string]string{"build_tags": strings.Join(index.Config.BuildTags, ","), "goos": index.Config.GOOS, "goarch": index.Config.GOARCH, "toolchain": index.Config.Toolchain, "cgo_enabled": fmt.Sprint(index.Config.CGOEnabled), "external_imports": strings.Join(external, ","), "external_basis": "declared toolchain and captured module manifests; transitive bytes not inspected"}}}
+			Environment: map[string]string{"build_tags": strings.Join(index.Config.BuildTags, ","), "goos": index.Config.GOOS, "goarch": index.Config.GOARCH, "toolchain": index.Config.Toolchain, "cgo_enabled": fmt.Sprint(index.Config.CGOEnabled), "local_build_basis": code.TestBuildVersion, "goenv": "off", "goexperiment": "", "external_imports": strings.Join(build.ExternalImports, ","), "external_basis": "declared toolchain and captured module manifests; transitive bytes not inspected"}}}
+	runEnvironment, _ := code.GoTestEnvironment(index.Config)
+	for key, value := range runEnvironment {
+		key = strings.ToLower(key)
+		if _, already := contract.Basis.Environment[key]; !already {
+			contract.Basis.Environment[key] = value
+		}
+	}
 	command, err := check.GoTestCommand(contract.Selector, index.Config.BuildTags)
 	if err != nil {
 		return contract, nil, index, captured, err

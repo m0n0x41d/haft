@@ -47,8 +47,8 @@ func (capture CaptureResult) Index(config Config) (Index, error) {
 	}
 	index.Diagnostics = append(index.Diagnostics, capture.Diagnostics...)
 	for _, exclusion := range capture.Exclusions {
-		if exclusion.Reason == "ignore_rule" && path.Ext(exclusion.Path) == ".go" {
-			index.Diagnostics = append(index.Diagnostics, diagnostic("excluded_source_closure_partial", exclusion.Path, "Ignored Go source is outside the captured dependency closure"))
+		if exclusion.Reason == "ignore_rule" && (isGoBuildInput(exclusion.Path) || path.Base(exclusion.Path) == "vendor") {
+			index.Diagnostics = append(index.Diagnostics, diagnostic("excluded_source_closure_partial", exclusion.Path, "Ignored Go build input is outside the captured dependency closure"))
 		}
 	}
 	return index, nil
